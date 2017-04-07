@@ -6,43 +6,30 @@ package edu.krishna.scrapers;
   Created by Krishna on 14-3-2017.
  */
 
-import java.io.*;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.TreeMap;
-import java.util.TreeSet;
-
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-public class YelpBusinessJsonScraper {
+import java.io.*;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.TreeMap;
 
+public class YelpReviewJsonScraper {
     public static void run(String[] args) {
 
         // Specify the location of the file
-        String outputFileLocation = "data\\htmlOutput.html";
-        outputToHTMLFile(getCategories(args),outputFileLocation);
-        System.out.println("HTML saved to: " + outputFileLocation);
-
-    }
-
-    public static TreeMap <String, Integer> getCategories(String[] args){
-
-        // Specify the location of the file
-        String inputFileLocation = "data\\yelp_academic_dataset_business.json";
+        String inputFileLocation = "data\\yelp_academic_dataset_review.json";
         String outputFileLocation = "data\\htmlOutput.html";
         TreeMap<String, Integer> categories = new TreeMap<String, Integer>();
         JSONArray objCategories;
+        System.out.println("Reading JSON from: " + inputFileLocation);
 
-        // Read the file locations from the arguments
         if(args != null && args.length > 0 && args[0] != null && args[0].length() > 0){
             inputFileLocation = args[0];
         }
-        if(args != null && args.length > 1 && args[1] != null && args[1].length() > 0){
-            outputFileLocation = args[1];
-        }
-        System.out.println("Reading from JSON (" + inputFileLocation + ")");
+
+        int counter = 0;
 
         BufferedReader br = null;
         try {
@@ -50,23 +37,25 @@ public class YelpBusinessJsonScraper {
             br = new BufferedReader(new FileReader(inputFileLocation));
 
             // IMPORTANT: Assume every line is json Object
-            while ((line = br.readLine()) != null) {
+            while ((line = br.readLine()) != null && counter < 10) {
+                counter++;
+                System.out.println(counter + ": " + line);
                 try {
                     // Parse the line
-                    objCategories = new JSONObject(line).optJSONArray("categories");
-                    if (objCategories != null) {
-                        // Add the categories to our list
-                        for(Object category : objCategories){
-                            String key = category.toString().trim();
-                            if(categories.containsKey(key)){
-                                categories.put(key,categories.get(key) + 1);
-                            } else {
-                                categories.put(key,1);
-                            }
-                        }
-                    } else {
-                        System.out.println("NULL CATEGORIES");
-                    }
+//                    objCategories = new JSONObject(line).optJSONArray("categories");
+//                    if (objCategories != null) {
+//                        // Add the categories to our list
+//                        for(Object category : objCategories){
+//                            String key = category.toString().trim();
+//                            if(categories.containsKey(key)){
+//                                categories.put(key,categories.get(key) + 1);
+//                            } else {
+//                                categories.put(key,1);
+//                            }
+//                        }
+//                    } else {
+//                        System.out.println("NULL CATEGORIES");
+//                    }
                 } catch (JSONException ex) {
                     System.out.println("INVALID JSON OBJECT.");
                 } catch (NoSuchElementException ex){
@@ -84,13 +73,14 @@ public class YelpBusinessJsonScraper {
             }
         }
 
-        System.out.println("Total number of categories: " + categories.size());
-        return categories;
+//        System.out.println("Total number of categories: " + categories.size());
+//        outputToFile(categories,outputFileLocation);
+//        System.out.println("HTML saved to: " + outputFileLocation);
+        System.out.println("Done.");
 
     }
 
-
-    private static void outputToHTMLFile(TreeMap <String, Integer> categories, String fileLocation){
+    private static void outputToFile(TreeMap <String, Integer> categories, String fileLocation){
 
         BufferedWriter output = null;
         int numOfColumns = 3;
