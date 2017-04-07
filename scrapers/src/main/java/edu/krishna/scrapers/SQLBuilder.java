@@ -15,32 +15,158 @@ import java.util.TreeMap;
  */
 public class SQLBuilder {
 
+
     public static void run(String[] args){
 
         // Write enumeration lists. These keep track of the Yelp provided ids. (The line number is the corresponding new database ID)
-//        writeList("data\\yelp_academic_dataset_business.json", "data\\list-business.txt", "business_id");
-//        writeList("data\\yelp_academic_dataset_user.json", "data\\list-user.txt", "user_id");
-//        writeList(YelpBusinessJsonScraper.getCategories(args), "data\\list-categories.txt");
-//        writeList("data\\yelp_academic_dataset_review.json", "data\\list-review.txt", "review_id");
+        writeList("data\\yelp_academic_dataset_business.json", "data\\list-business.txt", "business_id");
+        writeList("data\\yelp_academic_dataset_user.json", "data\\list-user.txt", "user_id");
+        writeList(YelpBusinessJsonScraper.getCategories(args), "data\\list-categories.txt");
+        writeList("data\\yelp_academic_dataset_review.json", "data\\list-review.txt", "review_id");
 
         // Write to SQL
-//        writeSQL("data\\yelp_academic_dataset_business.json", "data\\SQL-business.txt",
-//                new String [] {"business_id", "name", "full_address", "score"});
-//        writeSQL("data\\yelp_academic_dataset_user.json", "data\\SQL-user.txt",
-//                new String [] {"user_id", "name"});
-//        writeSQL(YelpBusinessJsonScraper.getCategories(args), "data\\SQL-categories.txt");
+        writeSQL("data\\yelp_academic_dataset_business.json", "data\\SQL-business.txt",
+                new String [] {"business_id", "name", "full_address", "score"});
+        writeSQL("data\\yelp_academic_dataset_user.json", "data\\SQL-user.txt",
+                new String [] {"user_id", "name"});
+        writeSQLReviews("data\\yelp_academic_dataset_review.json", "data\\SQL-review.txt",
+                "data\\list-business.txt", "data\\list-user.txt", new String [] {"review_id", "text", "stars", "businessID", "userID"}, 6);
+        writeSQL(YelpBusinessJsonScraper.getCategories(args), "data\\SQL-categories.txt");
         writeSQLRelationshipTable("data\\yelp_academic_dataset_business.json", "data\\SQL-business-categories-rel.txt",
                 "data\\list-business.txt", "data\\list-categories.txt", "business_id");
 
     }
 
-    public static void writeSQLRelationshipTable(String inputFileLocation, String outputFileLocation, String list1FileLocation, String list2FileLocation, String id_key){
+
+    public static void writeSQLReviews(String inputFileLocation, String outputFileLocation, String list1FileLocation, String list2FileLocation, String [] id_keys, int maxReviews){
 
         System.out.println("Writing SQL (" + outputFileLocation + ") from JSON (" + inputFileLocation + ")");
 
         JSONObject item;
         StringBuilder sBuilder = new StringBuilder();
         int counter = 0;
+        boolean skipped = false;
+        String value;
+        BufferedReader br = null;
+        BufferedWriter output = null;
+        TreeMap<String, ListItem> businesses = readIDSfromList(list1FileLocation);
+        TreeMap<String, ListItem> users = readIDSfromList(list2FileLocation);
+        ListItem business = null;
+        ListItem user = null;
+
+        try {
+            String line;
+            br = new BufferedReader(new FileReader(inputFileLocation));
+            output = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFileLocation), "utf-8"));
+
+            // IMPORTANT: Assume every line is json Object
+            while ((line = br.readLine()) != null) {
+                try {
+                    // Parse the line
+                    item = new JSONObject(line);
+                    business = null;
+                    user = null;
+                    if (item != null) {
+
+                        // Move to the next line if there are lines before this one
+                        if(counter > 0 && !skipped){
+                            output.write(',');
+                            output.newLine();
+                        }
+
+                        // Start a INSERT line (add the PRIMARY ID)
+                        counter++;
+                        sBuilder.setLength(0);
+                        sBuilder.append('(').append(counter);
+
+                        // Add the INSERT values
+                        for(String id : id_keys){
+                            value = item.optString(id);
+                            if (item.has(id)) {
+                                if(id.equals("stars")){
+                                    sBuilder.append(',').append(' ').append(item.optInt("stars", 3));
+                                } else {
+                                    sBuilder.append(',').append(' ').append('\'').append(SQLInjectionEscaper.escapeString(value, false)).append('\'');
+                                }
+                            } else {
+                                if (id.equals("businessID")) {
+                                    // Update the businessID list accordingly
+                                    business = businesses.get(item.optString("business_id"));
+                                    if(business != null ) {
+                                        business.count++;
+                                        business.sum_score += item.optInt("stars", 3);
+                                        businesses.put(value, business);
+                                    }
+                                    sBuilder.append(',').append(' ').append(business != null ? business.index : "NULL");
+                                } else if (id.equals("userID")){
+                                    user = users.get(item.optString("user_id"));
+                                    sBuilder.append(',').append(' ').append(user != null ? user.index : "NULL");
+                                }else {
+                                    sBuilder.append(',').append(' ').append("NULL");
+                                }
+                            }
+                        }
+
+                        // Finish the INSERT line
+                        sBuilder.append(')');
+
+                        if(business != null && (maxReviews < 0 || business.count < maxReviews)){
+                            output.write(sBuilder.toString());
+                            skipped = false;
+                        } else {
+                            skipped = true;
+                        }
+
+                        if(counter % 1000 == 0){
+                            System.out.print("." + ((counter/1000)%10));
+                            if(counter % 100000 == 0){
+                                System.out.println();
+                            }
+                        }
+
+                    } else {
+                        System.out.println("BUSINESS_ID NOT FOUND");
+                    }
+                } catch (JSONException ex) {
+                    System.out.println("INVALID JSON OBJECT.");
+                    System.out.println(ex.toString());
+                } catch (NoSuchElementException ex){
+                    System.out.println("NO ELEMENT");
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (br != null)
+                    br.close();
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            if ( output != null ) {
+                try {
+                    output.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        System.out.println();
+        System.out.println("SQL saved to: " + outputFileLocation);
+
+    }
+
+    public static void writeSQLRelationshipTable(String inputFileLocation, String outputFileLocation, String list1FileLocation, String list2FileLocation, String id_key1){
+
+        System.out.println("Writing SQL (" + outputFileLocation + ") from JSON (" + inputFileLocation + ")");
+
+        JSONObject item;
+        StringBuilder sBuilder = new StringBuilder();
+        int counter = 0;
+        TreeMap<String, ListItem> businesses = readIDSfromList(list1FileLocation);
+        TreeMap<String, ListItem> categories = readIDSfromList(list2FileLocation);
+
         int businessID = 0;
         int categoryID = 0;
         JSONArray objCategories;
@@ -57,7 +183,8 @@ public class SQLBuilder {
                 try {
                     // Parse the line
                     item = new JSONObject(line);
-                    businessID = readIDfromList(list1FileLocation, item.optString(id_key));
+                    ListItem temp = businesses.get(item.optString(id_key1));
+                    businessID = temp != null ? temp.index : -1;
 
                     objCategories = item.optJSONArray("categories");
                     if (objCategories != null) {
@@ -65,7 +192,8 @@ public class SQLBuilder {
                         for(Object category : objCategories){
                             // get the values
                             counter++;
-                            categoryID = readIDfromList(list2FileLocation, category.toString().trim());
+                            temp = categories.get(category);
+                            categoryID = temp != null ? temp.index : -1;
 
                             // Add the INSERT values
                             if(categoryID >0 && businessID > 0){
@@ -78,7 +206,7 @@ public class SQLBuilder {
                                 output.newLine();
 
                             } else {
-                                System.out.println("ERROR: Unknown ID - busID=" + businessID +" (" + item.optString(id_key) + ") | catID=" + categoryID + " (" + category.toString() +")");
+                                System.out.println("ERROR: Unknown ID - busID=" + businessID + " (" + item.optString(id_key1) + ") | catID=" + categoryID + " (" + category.toString() +")");
                             }
 
                             if(counter % 1000 == 0){
@@ -396,5 +524,46 @@ public class SQLBuilder {
 
         return stringFound ? counter : -1;
     }
+
+    private static TreeMap<String, ListItem> readIDSfromList(String listFileLocation){
+
+        int counter = 0;
+        TreeMap<String, ListItem> businesses = new TreeMap<String, ListItem>();
+
+        BufferedReader br = null;
+        try {
+            String line;
+            br = new BufferedReader(new FileReader(listFileLocation));
+
+            // IMPORTANT: Assume every line is json Object
+            while ((line = br.readLine()) != null) {
+                try {
+                    // Increment counter till we find the string
+                    counter++;
+                    businesses.put(line, new ListItem(counter));
+
+                } catch (JSONException ex) {
+                    System.out.println("INVALID JSON OBJECT.");
+                } catch (NoSuchElementException ex){
+                    System.out.println("NO CATEGORIES");
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (br != null)
+                    br.close();
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+        }
+
+        System.out.println("Total number of list items (" + listFileLocation + "): " + businesses.size());
+
+        return businesses;
+
+    }
+
 
 }
